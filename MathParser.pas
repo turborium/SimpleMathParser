@@ -305,7 +305,7 @@ end;
 
 procedure TMathParser.SkipSpaces;
 begin
-  while Data[Position] in [#9, ' '] do
+  while CharInSet(Data[Position], [#9, ' ']) do
   begin
     Position := Position + 1;
   end;
