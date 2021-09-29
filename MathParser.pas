@@ -1,3 +1,6 @@
+// copyright 2021-2021 crazzzypeter
+// license GNU 3.0
+
 unit MathParser;
 
 {$SCOPEDENUMS ON}
