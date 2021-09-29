@@ -3,6 +3,8 @@
 
 unit MathParser;
 
+{$IFDEF FPC}{$MODE DELPHIUNICODE}{$ENDIF}
+
 {$SCOPEDENUMS ON}
 
 interface
@@ -126,7 +128,8 @@ begin
         end;
       end;
 
-      if not TryStrToFloat(TokenString, Value, TFormatSettings.Invariant) then
+      if not TryStrToFloat(TokenString, Value,
+        {$IFNDEF FPC}TFormatSettings.Invariant{$ELSE}DefaultFormatSettings{$ENDIF}) then
         raise EParserError.Create(PrevPosition, sBadNumber);// error
     end;
     '+':
@@ -265,7 +268,7 @@ end;
 
 function TMathParser.Calculate: Double;
 var
-  Mask: TArithmeticExceptionMask;
+  Mask: {$IFNDEF FPC}TArithmeticExceptionMask{$ELSE}TFPUExceptionMask{$ENDIF};
 begin
   Position := 0;
   BracketLevel := 0;
