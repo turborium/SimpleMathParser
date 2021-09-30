@@ -33,7 +33,7 @@ type
 
   TLogEvent = procedure (sender: TObject; str: string) of object;
 
-  TTokenType = (Number, Plus, Minus, Multiply, Divide, LeftBracket, RightBracket, Terminal);
+  TTokenType = (Number, Plus, Minus, Multiply, Divide, LeftBracket, RightBracket, &Function, Terminal);
 
   TMathParser = class sealed
   private
@@ -46,12 +46,14 @@ type
     PrevPosition: Integer;
     Token: TTokenType;
     Value: Double;
+    Identifier: string;
     BracketLevel: Integer;
     procedure NextToken;
     procedure SkipSpaces;
     function Primitive: Double;
     function AddAndSub: Double;
     function MulAndDiv: Double;
+    function ExecuteFunction(const X: Double; FunctionName: string; const FunctionPosition: Integer): Double;
     procedure Log(str: string);
   public
     constructor Create;
@@ -71,6 +73,8 @@ const
   sUnexpectedSymbol = 'Unexpected symbol';
   sBadNumber = 'Bad number';
   sDivisionByZero = 'Division by zero';
+  sBadFunctionArgument = 'Bad function argument';
+  sBadFunction = 'Bad function';
 
 { TMathParser }
 
@@ -85,8 +89,6 @@ begin
   case Data[Position] of
     '0'..'9':
     begin
-      Log('TokenType = Number');
-
       // for ex: 12.34e+56
       // 12
       Token := TTokenType.Number;
@@ -131,46 +133,66 @@ begin
       if not TryStrToFloat(TokenString, Value,
         {$IFNDEF FPC}TFormatSettings.Invariant{$ELSE}DefaultFormatSettings{$ENDIF}) then
         raise EParserError.Create(PrevPosition, sBadNumber);// error
+
+      Log('NextToken: TokenType = Number, Value = ' +
+        FloatToStr(Value, {$IFNDEF FPC}TFormatSettings.Invariant{$ELSE}DefaultFormatSettings{$ENDIF}));
     end;
     '+':
     begin
-      Log('TokenType = Plus');
+      Log('NextToken: TokenType = Plus');
       Token := TTokenType.Plus;
       Position := Position + 1;
     end;
     '-':
     begin
-      Log('TokenType = Minus');
+      Log('NextToken: TokenType = Minus');
       Token := TTokenType.Minus;
       Position := Position + 1;
     end;
     '*':
     begin
-      Log('TokenType = Mul');
+      Log('NextToken: TokenType = Multiply');
       Token := TTokenType.Multiply;
       Position := Position + 1;
     end;
     '/':
     begin
-      Log('TokenType = Div');
+      Log('NextToken: TokenType = Divide');
       Token := TTokenType.Divide;
       Position := Position + 1;
     end;
     '(':
     begin
-      Log('TokenType = LeftBracket');
+      Log('NextToken: TokenType = LeftBracket');
       Token := TTokenType.LeftBracket;
       Position := Position + 1;
     end;
     ')':
     begin
-      Log('TokenType = RightBracket');
+      Log('NextToken: TokenType = RightBracket');
       Token := TTokenType.RightBracket;
       Position := Position + 1;
     end;
+    'a'..'z', 'A'..'Z':
+    begin
+      Token := TTokenType.&Function;
+      Identifier := '';
+      // abc
+      while CharInSet(Data[Position], ['a'..'z', 'A'..'Z']) do
+      begin
+        Identifier := Identifier + Data[Position];
+        Position := Position + 1;
+      end;
+      // SkipSpaces;
+      // (
+      if Data[Position] <> '(' then
+        raise EParserError.Create(PrevPosition, sBadFunction);// error
+      Position := Position + 1;
+      Log('NextToken: TokenType = Function, Value = ' + Identifier);
+    end;
     #0:
     begin
-      Log('TokenType = Terminal');
+      Log('NextToken: TokenType = Terminal');
       Token := TTokenType.Terminal;
     end;
     else
@@ -179,6 +201,9 @@ begin
 end;
 
 function TMathParser.Primitive: Double;
+var
+  FunctionName: string;
+  FunctionPos: Integer;
 begin
   NextToken;
   case Token of
@@ -204,6 +229,18 @@ begin
       NextToken;
       BracketLevel := BracketLevel - 1;
     end;
+    TTokenType.&Function:
+    begin
+      FunctionName := Identifier;
+      FunctionPos := PrevPosition;
+      BracketLevel := BracketLevel + 1;
+      Result := AddAndSub;
+      if Token <> TTokenType.RightBracket then
+        raise EParserError.Create(Position, sClosingParenthesisExpected);// error
+      Result := ExecuteFunction(Result, FunctionName, FunctionPos);
+      NextToken;
+      BracketLevel := BracketLevel - 1;
+    end
     else
       raise EParserError.Create(PrevPosition, sPrimitiveExpected);// error
   end;
@@ -292,6 +329,54 @@ end;
 destructor TMathParser.Destroy;
 begin
   inherited;
+end;
+
+function TMathParser.ExecuteFunction(const X: Double; FunctionName: string; const FunctionPosition: Integer): Double;
+begin
+  // aaa -> AAA
+  FunctionName := UpperCase(FunctionName);
+
+  if FunctionName = 'SQRT' then
+  begin
+    if X < 0 then
+      raise EParserError.Create(FunctionPosition, sBadFunctionArgument);
+    Result := Sqrt(X);
+  end
+  else if FunctionName = 'SIN' then
+    Result := Sin(X)
+  else if FunctionName = 'COS' then
+    Result := Cos(X)
+  else if FunctionName = 'TAN' then
+    Result := Tan(X)
+  else if FunctionName = 'ARCSIN' then
+  begin
+    if (X < -1) or (X > 1) then
+      raise EParserError.Create(FunctionPosition, sBadFunctionArgument);
+    Result := ArcSin(X);
+  end
+  else if FunctionName = 'ARCCOS' then
+  begin
+    if (X < -1) or (X > 1) then
+      raise EParserError.Create(FunctionPosition, sBadFunctionArgument);
+    Result := ArcCos(X);
+  end
+  else if FunctionName = 'ARCTAN' then
+  begin
+    if (X < -Pi / 2) or (X > Pi / 2) then
+      raise EParserError.Create(FunctionPosition, sBadFunctionArgument);
+    Result := ArcTan(X);
+  end
+  else if FunctionName = 'LOG' then
+  begin
+    if (X <= 0) then
+      raise EParserError.Create(FunctionPosition, sBadFunctionArgument);
+    Result := Log10(X);
+  end
+  else if FunctionName = 'EXP' then
+  begin
+    Result := Exp(X);
+  end else
+    raise EParserError.Create(FunctionPosition, sBadFunction);
 end;
 
 procedure TMathParser.Log(str: string);
