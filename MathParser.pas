@@ -33,7 +33,7 @@ type
 
   TLogEvent = procedure (sender: TObject; str: string) of object;
 
-  TTokenType = (Number, Plus, Minus, Multiply, Divide, LeftBracket, RightBracket, &Function, Terminal);
+  TTokenType = (Number, Plus, Minus, Multiply, Divide, Power, LeftBracket, RightBracket, &Function, Terminal);
 
   TMathParser = class sealed
   private
@@ -47,7 +47,6 @@ type
     Token: TTokenType;
     Value: Double;
     Identifier: string;
-    BracketLevel: Integer;
     procedure NextToken;
     procedure SkipSpaces;
     function Primitive: Double;
@@ -55,6 +54,7 @@ type
     function MulAndDiv: Double;
     function ExecuteFunction(const X: Double; FunctionName: string; const FunctionPosition: Integer): Double;
     procedure Log(str: string);
+    function Pow: Double;
   public
     constructor Create;
     destructor Destroy; override;
@@ -161,6 +161,12 @@ begin
       Token := TTokenType.Divide;
       Position := Position + 1;
     end;
+    '^':
+    begin
+      Log('NextToken: TokenType = Power');
+      Token := TTokenType.Power;
+      Position := Position + 1;
+    end;
     '(':
     begin
       Log('NextToken: TokenType = LeftBracket');
@@ -207,11 +213,7 @@ var
 begin
   NextToken;
   case Token of
-    TTokenType.Number:
-    begin
-      Result := Value;
-      NextToken;
-    end;
+    // unary operators +/-
     TTokenType.Plus:
     begin
       Result := Primitive;
@@ -220,39 +222,42 @@ begin
     begin
       Result := -Primitive;
     end;
+    // primitives
+    TTokenType.Number:
+    begin
+      Result := Value;
+      NextToken;
+    end;
     TTokenType.LeftBracket:
     begin
-      BracketLevel := BracketLevel + 1;
       Result := AddAndSub;
       if Token <> TTokenType.RightBracket then
         raise EParserError.Create(Position, sClosingParenthesisExpected);// error
       NextToken;
-      BracketLevel := BracketLevel - 1;
     end;
     TTokenType.&Function:
     begin
       FunctionName := Identifier;
       FunctionPos := PrevPosition;
-      BracketLevel := BracketLevel + 1;
       Result := AddAndSub;
       if Token <> TTokenType.RightBracket then
         raise EParserError.Create(Position, sClosingParenthesisExpected);// error
       Result := ExecuteFunction(Result, FunctionName, FunctionPos);
       NextToken;
-      BracketLevel := BracketLevel - 1;
     end
     else
       raise EParserError.Create(PrevPosition, sPrimitiveExpected);// error
   end;
 
-  if Token in [TTokenType.Number, TTokenType.LeftBracket] then
-    raise EParserError.Create(PrevPosition, sMissingOperator);// error
+  // if Token in [TTokenType.Number, TTokenType.LeftBracket] then
+  //   raise EParserError.Create(PrevPosition, sMissingOperator);// error
 
-  if (Token = TTokenType.RightBracket) and (BracketLevel = 0) then
-    raise EParserError.Create(PrevPosition, sUnmatchedRightParenthesis);// error
+  if not (Token in [TTokenType.Terminal, TTokenType.RightBracket, TTokenType.Plus, TTokenType.Minus,
+   TTokenType.Multiply, TTokenType.Divide, TTokenType.Power]) then
+    raise EParserError.Create(PrevPosition, sMissingOperator);// error
 end;
 
-function TMathParser.MulAndDiv: Double;
+function TMathParser.Pow: Double;
 var
   RightValue: Double;
 begin
@@ -261,15 +266,35 @@ begin
   while True do
   begin
     case Token of
+      // ^
+      TTokenType.Power:
+      begin
+        Result := Power(Result, Primitive);
+      end;
+      else
+        break;
+    end;
+  end;
+end;
+
+function TMathParser.MulAndDiv: Double;
+var
+  RightValue: Double;
+begin
+  Result := Pow;
+
+  while True do
+  begin
+    case Token of
       // *
       TTokenType.Multiply:
       begin
-        Result := Result * Primitive;
+        Result := Result * Pow;
       end;
       // /
       TTokenType.Divide:
       begin
-        RightValue := Primitive;
+        RightValue := Pow;
         if RightValue = 0.0 then
           raise EParserError.Create(Position, sDivisionByZero);
         Result := Result / RightValue;
@@ -308,14 +333,18 @@ var
   Mask: {$IFNDEF FPC}TArithmeticExceptionMask{$ELSE}TFPUExceptionMask{$ENDIF};
 begin
   Position := 0;
-  BracketLevel := 0;
-  
+
   Mask := SetExceptionMask([exInvalidOp, exDenormalized, exZeroDivide, exOverflow, exUnderflow, exPrecision]);
   try
     Result := AddAndSub;
+    if IsInfinite(Result) then
+      raise EParserError.Create(0, 'Overflow');// error
   finally
     SetExceptionMask(Mask);
   end;
+
+  if Token = TTokenType.RightBracket then
+    raise EParserError.Create(PrevPosition, sUnmatchedRightParenthesis);// error
 
   if Token <> TTokenType.Terminal then
     raise EParserError.Create(Position, 'Internal error!');// error
@@ -362,8 +391,6 @@ begin
   end
   else if FunctionName = 'ARCTAN' then
   begin
-    if (X < -Pi / 2) or (X > Pi / 2) then
-      raise EParserError.Create(FunctionPosition, sBadFunctionArgument);
     Result := ArcTan(X);
   end
   else if FunctionName = 'LOG' then
