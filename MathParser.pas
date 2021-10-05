@@ -10,7 +10,7 @@ unit MathParser;
 interface
 
 uses
-  Classes, SysUtils, Math;
+  Classes, SysUtils;
 
 type
   EParserError = class(Exception)
@@ -35,6 +35,8 @@ type
 
   TTokenType = (Number, Plus, Minus, Multiply, Divide, Power, LeftBracket, RightBracket, &Function, Terminal);
 
+  TMathCall = function(): Double of object;
+
   TMathParser = class sealed
   private
     FExpression: string;
@@ -47,6 +49,7 @@ type
     Token: TTokenType;
     Value: Double;
     Identifier: string;
+    StackLevel: Integer;
     procedure NextToken;
     procedure SkipSpaces;
     function Primitive: Double;
@@ -55,6 +58,7 @@ type
     function ExecuteFunction(const X: Double; FunctionName: string; const FunctionPosition: Integer): Double;
     procedure Log(str: string);
     function Pow: Double;
+    function Call(const Func: TMathCall): Double;
   public
     constructor Create;
     destructor Destroy; override;
@@ -65,7 +69,12 @@ type
 
 implementation
 
+uses
+  Math;
+
 const
+  MaxStackLevel = 32;
+
   sClosingParenthesisExpected = 'Closing parenthesis expected';
   sPrimitiveExpected = 'Primitive expected';
   sMissingOperator = 'Missing operator';
@@ -75,6 +84,9 @@ const
   sDivisionByZero = 'Division by zero';
   sBadFunctionArgument = 'Bad function argument';
   sBadFunction = 'Bad function';
+  sOverflow = 'Overflow';
+  sInternalError = 'Internal error!';
+  sStackOverflow = 'Stack overflow';
 
 { TMathParser }
 
@@ -216,11 +228,11 @@ begin
     // unary operators +/-
     TTokenType.Plus:
     begin
-      Result := Primitive;
+      Result := Call(Primitive);
     end;
     TTokenType.Minus:
     begin
-      Result := -Primitive;
+      Result := -Call(Primitive);
     end;
     // primitives
     TTokenType.Number:
@@ -230,7 +242,7 @@ begin
     end;
     TTokenType.LeftBracket:
     begin
-      Result := AddAndSub;
+      Result := Call(AddAndSub);
       if Token <> TTokenType.RightBracket then
         raise EParserError.Create(Position, sClosingParenthesisExpected);// error
       NextToken;
@@ -239,27 +251,21 @@ begin
     begin
       FunctionName := Identifier;
       FunctionPos := PrevPosition;
-      Result := AddAndSub;
+      Result := Call(AddAndSub);
       if Token <> TTokenType.RightBracket then
         raise EParserError.Create(Position, sClosingParenthesisExpected);// error
       Result := ExecuteFunction(Result, FunctionName, FunctionPos);
       NextToken;
-    end
+    end;
     else
       raise EParserError.Create(PrevPosition, sPrimitiveExpected);// error
   end;
 
-  // if Token in [TTokenType.Number, TTokenType.LeftBracket] then
-  //   raise EParserError.Create(PrevPosition, sMissingOperator);// error
-
-  if not (Token in [TTokenType.Terminal, TTokenType.RightBracket, TTokenType.Plus, TTokenType.Minus,
-   TTokenType.Multiply, TTokenType.Divide, TTokenType.Power]) then
+  if Token in [TTokenType.Number, TTokenType.LeftBracket, TTokenType.Function] then
     raise EParserError.Create(PrevPosition, sMissingOperator);// error
 end;
 
 function TMathParser.Pow: Double;
-var
-  RightValue: Double;
 begin
   Result := Primitive;
 
@@ -269,7 +275,7 @@ begin
       // ^
       TTokenType.Power:
       begin
-        Result := Power(Result, Primitive);
+        Result := Power(Result, Call(Pow));
       end;
       else
         break;
@@ -333,21 +339,32 @@ var
   Mask: {$IFNDEF FPC}TArithmeticExceptionMask{$ELSE}TFPUExceptionMask{$ENDIF};
 begin
   Position := 0;
+  StackLevel := 0;
 
   Mask := SetExceptionMask([exInvalidOp, exDenormalized, exZeroDivide, exOverflow, exUnderflow, exPrecision]);
   try
     Result := AddAndSub;
+
+    if Token = TTokenType.RightBracket then
+      raise EParserError.Create(PrevPosition, sUnmatchedRightParenthesis);// error
+
+    if Token <> TTokenType.Terminal then
+      raise EParserError.Create(Position, sInternalError);// error
+
     if IsInfinite(Result) then
-      raise EParserError.Create(0, 'Overflow');// error
+      raise EParserError.Create(0, sOverflow);// error
   finally
     SetExceptionMask(Mask);
   end;
+end;
 
-  if Token = TTokenType.RightBracket then
-    raise EParserError.Create(PrevPosition, sUnmatchedRightParenthesis);// error
-
-  if Token <> TTokenType.Terminal then
-    raise EParserError.Create(Position, 'Internal error!');// error
+function TMathParser.Call(const Func: TMathCall): Double;
+begin
+  StackLevel := StackLevel + 1;
+  if StackLevel > MaxStackLevel then
+    raise EParserError.Create(PrevPosition, sStackOverflow);
+  Result := Func();
+  StackLevel := StackLevel - 1;
 end;
 
 constructor TMathParser.Create;

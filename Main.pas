@@ -26,7 +26,7 @@ var
 implementation
 
 uses
-  StrUtils;
+  StrUtils, Math;
 
 {$R *.dfm}
 
@@ -34,6 +34,9 @@ procedure TFormMain.ButtonExecuteClick(Sender: TObject);
 var
   Ans: Double;
 begin
+  //Caption := Math.Tan(000000).ToString;
+  //EditExpression.Text := StrUtils.DupeString('-', 80000) + '9';
+
   Parser.Expression := EditExpression.Text;
   MemoLog.Clear;
   try
