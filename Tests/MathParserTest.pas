@@ -36,6 +36,8 @@ type
     [TestCase('bracket3','2*(10-5);10',';')]
     [TestCase('bracket4','10-(10+10);-10',';')]
     [TestCase('bracket5','(3*-(-((-2))))-(0)--9+++++9;12',';')]
+    [TestCase('functions1','log(log(8)/log(2))/1/(-(-(log(log(8)/log(2)))));1',';')]
+    [TestCase('Power','2^3^4;2417851639229258349412352',';')]
     procedure TestBase(const Expression: string; const Ans: Double);
 
     [Test]
@@ -100,3 +102,7 @@ initialization
   TDUnitX.RegisterTestFixture(TMathParserTest);
 
 end.
+
+
+
+
