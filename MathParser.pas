@@ -261,7 +261,7 @@ begin
       raise EParserError.Create(PrevPosition, sPrimitiveExpected);// error
   end;
 
-  if Token in [TTokenType.Number, TTokenType.LeftBracket, TTokenType.Function] then
+  if Token in [TTokenType.Number, TTokenType.LeftBracket, TTokenType.&Function] then
     raise EParserError.Create(PrevPosition, sMissingOperator);// error
 end;
 
