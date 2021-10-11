@@ -10,7 +10,7 @@ unit MathParser;
 interface
 
 uses
-  Classes, SysUtils;
+  Classes, SysUtils, Generics.Collections;
 
 type
   EParserError = class(Exception)
@@ -33,7 +33,8 @@ type
 
   TLogEvent = procedure (sender: TObject; str: string) of object;
 
-  TTokenType = (Number, Plus, Minus, Multiply, Divide, Power, LeftBracket, RightBracket, &Function, Terminal);
+  TTokenType = (Number, Plus, Minus, Multiply, Divide, Power, LeftBracket, RightBracket, &Function, Variable,
+    Terminal);
 
   TMathCall = function(): Double of object;
 
@@ -43,6 +44,7 @@ type
     FOnLog: TLogEvent;
     procedure SetExpression(const Value: string);
   private
+    FContants: TDictionary<string, Double>;
     Data: PChar;
     Position: Integer;
     PrevPosition: Integer;
@@ -59,12 +61,15 @@ type
     procedure Log(str: string);
     function Pow: Double;
     function Call(const Func: TMathCall): Double;
+    function GetConstant(const Name: string): Double;
+    procedure SetConstant(const Name: string; const Value: Double);
   public
     constructor Create;
     destructor Destroy; override;
     function Calculate: Double;
     property Expression: string read FExpression write SetExpression;
     property OnLog: TLogEvent read FOnLog write FOnLog;
+    property Constants[const Name: string]: Double read GetConstant write SetConstant;
   end;
 
 implementation
@@ -87,6 +92,7 @@ const
   sOverflow = 'Overflow';
   sInternalError = 'Internal error!';
   sStackOverflow = 'Stack overflow';
+  sContantNotFound = 'Constant not found';
 
 { TMathParser }
 
@@ -193,19 +199,24 @@ begin
     end;
     'a'..'z', 'A'..'Z':
     begin
-      Token := TTokenType.&Function;
       Identifier := '';
       // abc
-      while CharInSet(Data[Position], ['a'..'z', 'A'..'Z']) do
+      while CharInSet(Data[Position], ['a'..'z', 'A'..'Z', '0'..'9']) do
       begin
         Identifier := Identifier + Data[Position];
         Position := Position + 1;
       end;
       // SkipSpaces;
       // (
-      if Data[Position] <> '(' then
-        raise EParserError.Create(PrevPosition, sBadFunction);// error
-      Position := Position + 1;
+      if Data[Position] = '(' then
+      begin
+        Token := TTokenType.&Function;
+        Position := Position + 1;
+      end else
+        Token := TTokenType.Variable;
+
+      //raise EParserError.Create(PrevPosition, sBadFunction);// error
+
       Log('NextToken: TokenType = Function, Value = ' + Identifier);
     end;
     #0:
@@ -249,7 +260,7 @@ begin
     end;
     TTokenType.&Function:
     begin
-      FunctionName := Identifier;
+      FunctionName := UpperCase(Identifier);// hmmm...
       FunctionPos := PrevPosition;
       Result := Call(AddAndSub);
       if Token <> TTokenType.RightBracket then
@@ -257,6 +268,14 @@ begin
       Result := ExecuteFunction(Result, FunctionName, FunctionPos);
       NextToken;
     end;
+    TTokenType.Variable:
+    begin
+      if FContants.ContainsKey(UpperCase(Identifier)) then
+        Result := FContants[UpperCase(Identifier)]
+      else
+        raise EParserError.Create(PrevPosition, sContantNotFound);// error
+      NextToken;
+    end
     else
       raise EParserError.Create(PrevPosition, sPrimitiveExpected);// error
   end;
@@ -369,19 +388,19 @@ end;
 
 constructor TMathParser.Create;
 begin
+  FContants := TDictionary<string, Double>.Create;
+  FContants.Add('PI', System.Pi);
   Data := PChar(FExpression);
 end;
 
 destructor TMathParser.Destroy;
 begin
+  FContants.Free;
   inherited;
 end;
 
 function TMathParser.ExecuteFunction(const X: Double; FunctionName: string; const FunctionPosition: Integer): Double;
 begin
-  // aaa -> AAA
-  FunctionName := UpperCase(FunctionName);
-
   if FunctionName = 'SQRT' then
   begin
     if X < 0 then
@@ -423,10 +442,20 @@ begin
     raise EParserError.Create(FunctionPosition, sBadFunction);
 end;
 
+function TMathParser.GetConstant(const Name: string): Double;
+begin
+  Result := FContants[UpperCase(Name)];
+end;
+
 procedure TMathParser.Log(str: string);
 begin
   if Assigned(FOnLog) then
     FOnLog(self, str);
+end;
+
+procedure TMathParser.SetConstant(const Name: string; const Value: Double);
+begin
+  FContants.AddOrSetValue(UpperCase(Name), Value);
 end;
 
 procedure TMathParser.SetExpression(const Value: string);

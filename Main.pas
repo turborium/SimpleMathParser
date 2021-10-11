@@ -34,9 +34,8 @@ procedure TFormMain.ButtonExecuteClick(Sender: TObject);
 var
   Ans: Double;
 begin
-  //Caption := Math.Tan(000000).ToString;
-  //EditExpression.Text := StrUtils.DupeString('-', 80000) + '9';
-
+  Parser.Constants['x'] := 2;
+  Parser.Constants['y'] := 10;
   Parser.Expression := EditExpression.Text;
   MemoLog.Clear;
   try
@@ -62,6 +61,7 @@ end;
 procedure TFormMain.FormDestroy(Sender: TObject);
 begin
   Parser.Free;
+
 end;
 
 procedure TFormMain.ParserLog(sender: TObject; str: string);
