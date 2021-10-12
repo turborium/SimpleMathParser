@@ -401,6 +401,9 @@ end;
 
 function TMathParser.ExecuteFunction(const X: Double; FunctionName: string; const FunctionPosition: Integer): Double;
 begin
+  if IsNan(X) then
+    Exit(NaN);
+
   if FunctionName = 'SQRT' then
   begin
     if X < 0 then
