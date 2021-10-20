@@ -311,6 +311,7 @@ end;
 function TMathParser.MulAndDiv: Double;
 var
   RightValue: Double;
+  DividerPos: Integer;
 begin
   Result := Pow;
 
@@ -327,9 +328,10 @@ begin
       TTokenType.Divide:
       begin
         NextToken;
+        DividerPos := PrevPosition;
         RightValue := Pow;
         if RightValue = 0.0 then
-          raise EParserError.Create(Position, sDivisionByZero);
+          raise EParserError.Create(DividerPos, sDivisionByZero);
         Result := Result / RightValue;
       end;
       else
