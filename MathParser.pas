@@ -60,7 +60,7 @@ type
     function ExecuteFunction(const X: Double; FunctionName: string; const FunctionPosition: Integer): Double;
     procedure Log(str: string);
     function Pow: Double;
-    function Call(const Func: TMathCall): Double;
+    function RecursiveCall(const Func: TMathCall): Double;
     function GetConstant(const Name: string): Double;
     procedure SetConstant(const Name: string; const Value: Double);
   public
@@ -234,35 +234,39 @@ var
   FunctionName: string;
   FunctionPos: Integer;
 begin
-  NextToken;
+  //NextToken;
   case Token of
     // unary operators +/-
     TTokenType.Plus:
     begin
-      Result := Call(Primitive);
+      NextToken;
+      Result := RecursiveCall(Primitive);
     end;
     TTokenType.Minus:
     begin
-      Result := -Call(Primitive);
+      NextToken;
+      Result := -RecursiveCall(Primitive);
     end;
     // primitives
     TTokenType.Number:
     begin
-      Result := Value;
       NextToken;
+      Result := Value;
     end;
     TTokenType.LeftBracket:
     begin
-      Result := Call(AddAndSub);
+      NextToken;
+      Result := RecursiveCall(AddAndSub);
       if Token <> TTokenType.RightBracket then
-        raise EParserError.Create(Position, sClosingParenthesisExpected);// error
+        raise EParserError.Create(PrevPosition, sClosingParenthesisExpected);// error
       NextToken;
     end;
     TTokenType.&Function:
     begin
+      NextToken;
       FunctionName := UpperCase(Identifier);// hmmm...
       FunctionPos := PrevPosition;
-      Result := Call(AddAndSub);
+      Result := RecursiveCall(AddAndSub);
       if Token <> TTokenType.RightBracket then
         raise EParserError.Create(Position, sClosingParenthesisExpected);// error
       Result := ExecuteFunction(Result, FunctionName, FunctionPos);
@@ -270,6 +274,7 @@ begin
     end;
     TTokenType.Variable:
     begin
+      NextToken;
       if FContants.ContainsKey(UpperCase(Identifier)) then
         Result := FContants[UpperCase(Identifier)]
       else
@@ -280,8 +285,8 @@ begin
       raise EParserError.Create(PrevPosition, sPrimitiveExpected);// error
   end;
 
-  if Token in [TTokenType.Number, TTokenType.LeftBracket, TTokenType.&Function] then
-    raise EParserError.Create(PrevPosition, sMissingOperator);// error
+  //if Token in [TTokenType.Number, TTokenType.LeftBracket, TTokenType.&Function] then
+  //  raise EParserError.Create(PrevPosition, sMissingOperator);// error
 end;
 
 function TMathParser.Pow: Double;
@@ -294,7 +299,8 @@ begin
       // ^
       TTokenType.Power:
       begin
-        Result := Power(Result, Call(Pow));
+        NextToken;
+        Result := Power(Result, RecursiveCall(Pow));
       end;
       else
         break;
@@ -314,11 +320,13 @@ begin
       // *
       TTokenType.Multiply:
       begin
+        NextToken;
         Result := Result * Pow;
       end;
       // /
       TTokenType.Divide:
       begin
+        NextToken;
         RightValue := Pow;
         if RightValue = 0.0 then
           raise EParserError.Create(Position, sDivisionByZero);
@@ -340,11 +348,13 @@ begin
       // +
       TTokenType.Plus:
       begin
+        NextToken;
         Result := Result + MulAndDiv;
       end;
       // -
       TTokenType.Minus:
       begin
+        NextToken;
         Result := Result - MulAndDiv;
       end;
       else
@@ -362,13 +372,14 @@ begin
 
   Mask := SetExceptionMask([exInvalidOp, exDenormalized, exZeroDivide, exOverflow, exUnderflow, exPrecision]);
   try
+    NextToken;
     Result := AddAndSub;
 
     if Token = TTokenType.RightBracket then
       raise EParserError.Create(PrevPosition, sUnmatchedRightParenthesis);// error
 
     if Token <> TTokenType.Terminal then
-      raise EParserError.Create(Position, sInternalError);// error
+      raise EParserError.Create(PrevPosition, sMissingOperator);// error
 
     if IsInfinite(Result) then
       raise EParserError.Create(0, sOverflow);// error
@@ -377,7 +388,7 @@ begin
   end;
 end;
 
-function TMathParser.Call(const Func: TMathCall): Double;
+function TMathParser.RecursiveCall(const Func: TMathCall): Double;
 begin
   StackLevel := StackLevel + 1;
   if StackLevel > MaxStackLevel then
