@@ -263,9 +263,9 @@ begin
     end;
     TTokenType.&Function:
     begin
-      NextToken;
       FunctionName := UpperCase(Identifier);// hmmm...
       FunctionPos := PrevPosition;
+      NextToken;
       Result := RecursiveCall(AddAndSub);
       if Token <> TTokenType.RightBracket then
         raise EParserError.Create(Position, sClosingParenthesisExpected);// error
@@ -274,7 +274,6 @@ begin
     end;
     TTokenType.Variable:
     begin
-      NextToken;
       if FContants.ContainsKey(UpperCase(Identifier)) then
         Result := FContants[UpperCase(Identifier)]
       else
